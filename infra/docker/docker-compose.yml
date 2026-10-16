@@ -1,0 +1,53 @@
+name: wierd
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: wierd-postgres
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wierd_db}
+      POSTGRES_USER: ${POSTGRES_USER:-wierd_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wierd_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - wierd_network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-wierd_user} -d ${POSTGRES_DB:-wierd_db}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: wierd-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - wierd_network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  wierd_network:
+    name: wierd_network
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: wierd_postgres_data
+  redis_data:
+    name: wierd_redis_data

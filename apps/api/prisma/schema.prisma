@@ -1,0 +1,217 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Core user profile for platform creators and cooks
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  username     String   @unique @db.VarChar(50)
+  displayName  String   @db.VarChar(100)
+  email        String?  @unique @db.VarChar(255)
+  passwordHash String?  @db.VarChar(255)
+  bio          String?  @db.Text
+  avatarUrl    String?  @db.Text
+  skillLevel   String   @default("beginner") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  preferences    UserPreference?
+  experiments    Experiment[]
+  cookingResults CookingResult[]
+  votes          Vote[]
+
+  @@index([username])
+  @@map("users")
+}
+
+/// Structured user dietary and taste preferences
+model UserPreference {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @unique @db.Uuid
+  dietaryRestrictions String[] @default([])
+  spiceTolerance      String   @default("medium") @db.VarChar(30)
+  preferredCuisines   String[] @default([])
+  dislikedIngredients String[] @default([])
+  availableEquipment  String[] @default([])
+  budgetPreference    String   @default("moderate") @db.VarChar(30)
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+/// Canonical catalog of known ingredients
+model Ingredient {
+  id                  String   @id @default(uuid()) @db.Uuid
+  name                String   @unique @db.VarChar(150)
+  category            String   @default("other") @db.VarChar(50)
+  commonSubstitutions String[] @default([])
+  isCommonAllergen    Boolean  @default(false)
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  experimentIngredients ExperimentIngredient[]
+
+  @@index([name])
+  @@index([category])
+  @@map("ingredients")
+}
+
+/// Living Food Graph node representing a food experiment / recipe branch
+model Experiment {
+  id                   String   @id @default(uuid()) @db.Uuid
+  creatorId            String   @db.Uuid
+
+  // Living Food Graph Lineage
+  parentId             String?  @db.Uuid
+  rootId               String?  @db.Uuid
+  branchDepth          Int      @default(0)
+  transformations      Json?    @db.JsonB
+
+  // Recipe & Content
+  title                String   @db.VarChar(200)
+  description          String   @db.Text
+  steps                Json     @db.JsonB
+  difficulty           String   @default("medium") @db.VarChar(30)
+  estimatedCost        Json?    @db.JsonB
+  estimatedTimeMinutes Int      @default(15)
+  heroMedia            Json?    @db.JsonB
+
+  // AI & Safety
+  aiMetadata           Json?    @db.JsonB
+  safetyStatus         String   @default("SAFE") @db.VarChar(30)
+
+  // Aggregate Counts
+  remixCount           Int      @default(0)
+  cookCount            Int      @default(0)
+  voteCount            Int      @default(0)
+  resultCount          Int      @default(0)
+
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  creator              User                  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  parent               Experiment?           @relation("ExperimentLineage", fields: [parentId], references: [id], onDelete: SetNull)
+  children             Experiment[]          @relation("ExperimentLineage")
+  root                 Experiment?           @relation("ExperimentRoot", fields: [rootId], references: [id], onDelete: Restrict)
+  rootLineages         Experiment[]          @relation("ExperimentRoot")
+  ingredients          ExperimentIngredient[]
+  cookingResults       CookingResult[]
+  votes                Vote[]
+  safetyDecisions      SafetyDecision[]
+
+  @@index([creatorId])
+  @@index([parentId])
+  @@index([rootId])
+  @@index([branchDepth])
+  @@index([safetyStatus])
+  @@index([createdAt])
+  @@map("experiments")
+}
+
+/// Recipe ingredient attached to a specific experiment
+model ExperimentIngredient {
+  id               String      @id @default(uuid()) @db.Uuid
+  experimentId     String      @db.Uuid
+  canonicalId      String?     @db.Uuid
+  name             String      @db.VarChar(150)
+  quantity         Float
+  unit             String      @db.VarChar(50)
+  preparation      String?     @db.VarChar(150)
+  isOptional       Boolean     @default(false)
+  isCustomAddition Boolean     @default(false)
+  createdAt        DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime    @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  experiment       Experiment  @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  canonical        Ingredient? @relation(fields: [canonicalId], references: [id], onDelete: SetNull)
+
+  @@index([experimentId])
+  @@index([canonicalId])
+  @@map("experiment_ingredients")
+}
+
+/// Real-world cooking proof/outcome attached to an experiment
+model CookingResult {
+  id                String   @id @default(uuid()) @db.Uuid
+  experimentId      String   @db.Uuid
+  userId            String   @db.Uuid
+  media             Json     @db.JsonB
+  caption           String?  @db.Text
+  notes             String?  @db.Text
+  outcomeTag        String   @default("unexpectedly_worked") @db.VarChar(50)
+  tasteRating       Int      @default(3)
+  textureRating     Int?
+  wouldMakeAgain    Boolean  @default(true)
+  modificationsMade String?  @db.Text
+  likesCount        Int      @default(0)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  experiment        Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId])
+  @@index([userId])
+  @@index([outcomeTag])
+  @@map("cooking_results")
+}
+
+/// Community validation vote on an experiment
+model Vote {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @db.Uuid
+  experimentId String     @db.Uuid
+  choice       String     @db.VarChar(30)
+  createdAt    DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  // Constraint: Prevent duplicate voting on same experiment by same user
+  @@unique([userId, experimentId], name: "unique_user_experiment_vote")
+  @@index([experimentId])
+  @@index([userId])
+  @@map("votes")
+}
+
+/// Audit trail and safety moderation decisions
+model SafetyDecision {
+  id            String      @id @default(uuid()) @db.Uuid
+  targetId      String      @db.Uuid
+  targetType    String      @db.VarChar(50)
+  status        String      @default("SAFE") @db.VarChar(30)
+  riskCategory  String      @default("none") @db.VarChar(50)
+  reason        String      @db.Text
+  evaluatedAt   DateTime    @default(now()) @db.Timestamptz(6)
+  evaluatorType String      @db.VarChar(50)
+  modelVersion  String?     @db.VarChar(50)
+  reviewerNotes String?     @db.Text
+  experimentId  String?     @db.Uuid
+  createdAt     DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime    @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  experiment    Experiment? @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([targetId, targetType])
+  @@index([status])
+  @@index([experimentId])
+  @@map("safety_decisions")
+}
