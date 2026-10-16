@@ -16,7 +16,9 @@
     "test": "turbo run test",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "db:seed": "npm --workspace=@food-evolution/api run prisma:seed",
+    "seed": "npm --workspace=@food-evolution/api run prisma:seed"
   },
   "devDependencies": {
     "prettier": "^3.3.3",

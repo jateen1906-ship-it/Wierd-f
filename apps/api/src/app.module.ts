@@ -6,6 +6,8 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { ExperimentsModule } from './experiments/experiments.module';
 import { IngredientsModule } from './ingredients/ingredients.module';
+import { CookingResultsModule } from './cooking-results/cooking-results.module';
+import { VotesModule } from './votes/votes.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { IngredientsModule } from './ingredients/ingredients.module';
     AuthModule,
     ExperimentsModule,
     IngredientsModule,
+    CookingResultsModule,
+    VotesModule,
   ],
   controllers: [AppController],
   providers: [],

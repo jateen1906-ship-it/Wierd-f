@@ -131,7 +131,28 @@ export const CANONICAL_SEED_INGREDIENTS = [
   },
 ];
 
-export async function seedCanonicalIngredients(client: PrismaClient = prisma): Promise<number> {
+export type SeedIngredientClient = {
+  ingredient: {
+    upsert: (args: {
+      where: { name: string };
+      update: {
+        category: string;
+        commonSubstitutions: string[];
+        isCommonAllergen: boolean;
+      };
+      create: {
+        name: string;
+        category: string;
+        commonSubstitutions: string[];
+        isCommonAllergen: boolean;
+      };
+    }) => Promise<any>;
+  };
+};
+
+export async function seedCanonicalIngredients(
+  client: SeedIngredientClient = prisma,
+): Promise<number> {
   let count = 0;
   for (const item of CANONICAL_SEED_INGREDIENTS) {
     await client.ingredient.upsert({
