@@ -1,6 +1,11 @@
 import { z } from 'zod';
-import type { CookingOutcomeTag, CookingResult } from '@food-evolution/types';
+import type {
+  CookingOutcomeTag,
+  CookingResult,
+  ResultReactionSummary,
+} from '@food-evolution/types';
 import { entityIdSchema, isoTimestampSchema, mediaReferenceSchema } from './common.js';
+import { resultReactionTypeSchema } from './vote.js';
 
 /**
  * Cooking outcome tags schema embracing both perfection and chaotic failures
@@ -67,3 +72,30 @@ export const createCookingResultInputSchema = z.object({
   wouldMakeAgain: z.boolean(),
   modificationsMade: z.string().trim().max(500).optional(),
 });
+
+/**
+ * Result reaction summary schema
+ */
+export const resultReactionSummarySchema = z.object({
+  resultId: entityIdSchema,
+  fireCount: z.number().int().nonnegative(),
+  yuckCount: z.number().int().nonnegative(),
+  respectCount: z.number().int().nonnegative(),
+  laughCount: z.number().int().nonnegative(),
+  mindBlownCount: z.number().int().nonnegative(),
+  totalReactions: z.number().int().nonnegative(),
+  likesCount: z.number().int().nonnegative(),
+  userReaction: resultReactionTypeSchema.optional(),
+}) satisfies z.ZodType<ResultReactionSummary>;
+
+/**
+ * Cast reaction input schema
+ */
+export const castReactionInputSchema = z
+  .object({
+    type: resultReactionTypeSchema.optional(),
+    choice: resultReactionTypeSchema.optional(),
+  })
+  .refine((data) => data.type !== undefined || data.choice !== undefined, {
+    message: 'Reaction type or choice is required',
+  });

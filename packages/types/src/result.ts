@@ -1,4 +1,5 @@
 import type { EntityId, MediaReference, Timestamped } from './common.js';
+import type { ResultReactionType } from './vote.js';
 
 /**
  * Outcome tags normalizing real-world cooking attempts and embracing failure/chaos
@@ -27,6 +28,30 @@ export interface CookingResult extends Timestamped {
   readonly tasteRating: number; // 1-5 scale
   readonly textureRating?: number; // 1-5 scale
   readonly wouldMakeAgain: boolean;
-  readonly modificationsMade?: string;
   readonly likesCount: number;
+}
+
+/**
+ * Community reaction attached to a cooking result
+ */
+export interface CookingResultReaction extends Timestamped {
+  readonly id: EntityId;
+  readonly userId: EntityId;
+  readonly resultId: EntityId;
+  readonly type: ResultReactionType;
+}
+
+/**
+ * Aggregate reactions summary for a cooking result
+ */
+export interface ResultReactionSummary {
+  readonly resultId: EntityId;
+  readonly fireCount: number;
+  readonly yuckCount: number;
+  readonly respectCount: number;
+  readonly laughCount: number;
+  readonly mindBlownCount: number;
+  readonly totalReactions: number;
+  readonly likesCount: number;
+  readonly userReaction?: ResultReactionType;
 }

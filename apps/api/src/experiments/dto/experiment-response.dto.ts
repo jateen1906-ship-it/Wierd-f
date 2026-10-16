@@ -54,6 +54,18 @@ export interface ExperimentResponse {
   updatedAt: string;
 }
 
+/**
+ * Standard paginated response envelope for experiments feed
+ */
+export interface PaginatedExperimentsResponse {
+  items: ExperimentResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
 export function toSafeCreator(
   user: Pick<User, 'id' | 'username' | 'displayName' | 'avatarUrl' | 'skillLevel'>,
 ): SafeCreator {

@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -16,7 +17,16 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ParseExperimentIdPipe } from './pipes/parse-experiment-id.pipe';
 import { createExperimentSchema, type CreateExperimentDto } from './dto/create-experiment.dto';
 import { remixExperimentSchema, type RemixExperimentDto } from './dto/remix-experiment.dto';
-import type { ExperimentResponse } from './dto/experiment-response.dto';
+import {
+  experimentQuerySchema,
+  type ExperimentQueryDto,
+  userExperimentsQuerySchema,
+  type UserExperimentsQueryDto,
+} from './dto/experiment-query.dto';
+import type {
+  ExperimentResponse,
+  PaginatedExperimentsResponse,
+} from './dto/experiment-response.dto';
 import type { LineageResponse } from './dto/lineage-response.dto';
 import type { ExperimentTreeResponse } from './dto/tree-response.dto';
 
@@ -36,6 +46,18 @@ export class ExperimentsController {
     @Body(new ZodValidationPipe(createExperimentSchema)) dto: CreateExperimentDto,
   ): Promise<ExperimentResponse> {
     return this.experimentsService.create(user.userId, dto);
+  }
+
+  /**
+   * GET /api/v1/experiments
+   * Public discovery feed for exploring food experiments with search, filters, and sorting
+   */
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async findAll(
+    @Query(new ZodValidationPipe(experimentQuerySchema)) query: ExperimentQueryDto,
+  ): Promise<PaginatedExperimentsResponse> {
+    return this.experimentsService.findAll(query);
   }
 
   /**
@@ -81,5 +103,27 @@ export class ExperimentsController {
   @HttpCode(HttpStatus.OK)
   async getTree(@Param('id', ParseExperimentIdPipe) id: string): Promise<ExperimentTreeResponse> {
     return this.experimentsService.getTree(id);
+  }
+}
+
+/**
+ * Controller for Authenticated User Experiment Management (/api/v1/users/me/experiments)
+ */
+@Controller('users')
+export class UserExperimentsController {
+  constructor(private readonly experimentsService: ExperimentsService) {}
+
+  /**
+   * GET /api/v1/users/me/experiments
+   * List current authenticated user's own created experiments with pagination
+   */
+  @Get('me/experiments')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async findMyExperiments(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(userExperimentsQuerySchema)) query: UserExperimentsQueryDto,
+  ): Promise<PaginatedExperimentsResponse> {
+    return this.experimentsService.findMyExperiments(user.userId, query);
   }
 }

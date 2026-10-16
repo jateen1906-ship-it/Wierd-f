@@ -26,6 +26,7 @@ model User {
   experiments    Experiment[]
   cookingResults CookingResult[]
   votes          Vote[]
+  resultReactions ResultReaction[]
 
   @@index([username])
   @@map("users")
@@ -162,13 +163,35 @@ model CookingResult {
   updatedAt         DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
-  experiment        Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experiment        Experiment       @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions         ResultReaction[]
 
   @@index([experimentId])
   @@index([userId])
   @@index([outcomeTag])
   @@map("cooking_results")
+}
+
+/// Community reaction on a real-world cooking result
+model ResultReaction {
+  id        String        @id @default(uuid()) @db.Uuid
+  userId    String        @db.Uuid
+  resultId  String        @db.Uuid
+  type      String        @db.VarChar(30)
+  createdAt DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime      @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  result    CookingResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+
+  // Constraints & Indexes
+  @@unique([userId, resultId], name: "unique_user_result_reaction")
+  @@index([resultId])
+  @@index([userId])
+  @@index([type])
+  @@map("result_reactions")
 }
 
 /// Community validation vote on an experiment

@@ -4,17 +4,22 @@ import {
   ExperimentCookingResultsController,
   UserCookingResultsController,
 } from './cooking-results.controller';
+import { CookingResultReactionsController, UserReactionsController } from './reactions.controller';
 import { CookingResultsService } from './cooking-results.service';
+import { ReactionsService } from './reactions.service';
 import { DatabaseModule } from '../database/database.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, AuthModule],
   controllers: [
     CookingResultsController,
     ExperimentCookingResultsController,
     UserCookingResultsController,
+    CookingResultReactionsController,
+    UserReactionsController,
   ],
-  providers: [CookingResultsService],
-  exports: [CookingResultsService],
+  providers: [CookingResultsService, ReactionsService],
+  exports: [CookingResultsService, ReactionsService],
 })
 export class CookingResultsModule {}

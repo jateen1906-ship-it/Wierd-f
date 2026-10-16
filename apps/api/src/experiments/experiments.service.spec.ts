@@ -4,6 +4,7 @@ import { ExperimentsService } from './experiments.service';
 import { PrismaService } from '../database/prisma.service';
 import type { CreateExperimentDto } from './dto/create-experiment.dto';
 import type { RemixExperimentDto } from './dto/remix-experiment.dto';
+import { experimentQuerySchema, userExperimentsQuerySchema } from './dto/experiment-query.dto';
 
 describe('ExperimentsService', () => {
   let service: ExperimentsService;
@@ -58,6 +59,7 @@ describe('ExperimentsService', () => {
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        count: jest.fn(),
       },
       experimentIngredient: {
         createMany: jest.fn(),
@@ -415,6 +417,396 @@ describe('ExperimentsService', () => {
       expect(treeResult.tree.children[0]?.id).toBe(nodeB.id);
       expect(treeResult.tree.children[0]?.children).toHaveLength(1);
       expect(treeResult.tree.children[0]?.children[0]?.id).toBe(nodeC.id);
+    });
+  });
+
+  describe('4. findAll (Living Food Graph Discovery Feed)', () => {
+    const mockSampleExperiment = {
+      id: 'exp-1111-1111',
+      creatorId: mockCreator.id,
+      parentId: null,
+      rootId: 'exp-1111-1111',
+      branchDepth: 0,
+      title: 'Spicy Kimchi Toast',
+      description: 'Sourdough toast with sautéed kimchi and melted cheddar.',
+      steps: [{ stepNumber: 1, instruction: 'Toast sourdough' }],
+      difficulty: 'easy',
+      estimatedCost: { min: 100, max: 200, currency: 'INR' },
+      estimatedTimeMinutes: 10,
+      heroMedia: null,
+      aiMetadata: null,
+      safetyStatus: 'SAFE',
+      remixCount: 4,
+      cookCount: 12,
+      voteCount: 25,
+      resultCount: 8,
+      createdAt: new Date('2026-10-10T00:00:00Z'),
+      updatedAt: new Date('2026-10-10T00:00:00Z'),
+      creator: {
+        id: mockCreator.id,
+        username: mockCreator.username,
+        displayName: mockCreator.displayName,
+        avatarUrl: mockCreator.avatarUrl,
+        skillLevel: mockCreator.skillLevel,
+      },
+      ingredients: [
+        {
+          id: 'ing-1',
+          canonicalId: '99999999-9999-4999-8999-999999999999',
+          name: 'Kimchi',
+          quantity: 50,
+          unit: 'g',
+          preparation: null,
+          isOptional: false,
+          isCustomAddition: false,
+        },
+      ],
+    };
+
+    it('should query with default safety filter (safetyStatus: { not: "BLOCKED" }), pagination, and trending order', async () => {
+      prisma.experiment.findMany.mockResolvedValue([mockSampleExperiment]);
+      prisma.experiment.count.mockResolvedValue(1);
+
+      const res = await service.findAll({
+        sort: 'trending',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith({
+        where: {
+          safetyStatus: { not: 'BLOCKED' },
+        },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatarUrl: true,
+              skillLevel: true,
+            },
+          },
+          ingredients: true,
+        },
+        orderBy: [
+          { remixCount: 'desc' },
+          { cookCount: 'desc' },
+          { voteCount: 'desc' },
+          { resultCount: 'desc' },
+          { createdAt: 'desc' },
+          { id: 'desc' },
+        ],
+        skip: 0,
+        take: 20,
+      });
+
+      expect(res.items).toHaveLength(1);
+      expect(res.total).toBe(1);
+      expect(res.page).toBe(1);
+      expect(res.limit).toBe(20);
+      expect(res.totalPages).toBe(1);
+      expect(res.hasMore).toBe(false);
+      expect(res.items[0]?.title).toBe('Spicy Kimchi Toast');
+      expect((res.items[0]?.creator as any).passwordHash).toBeUndefined();
+      expect((res.items[0]?.creator as any).email).toBeUndefined();
+    });
+
+    it('should filter by search term case-insensitively across title and description', async () => {
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(0);
+
+      await service.findAll({
+        search: 'kimchi',
+        sort: 'trending',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { title: { contains: 'kimchi', mode: 'insensitive' } },
+              { description: { contains: 'kimchi', mode: 'insensitive' } },
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('should filter by difficulty level', async () => {
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(0);
+
+      await service.findAll({
+        difficulty: 'easy',
+        sort: 'trending',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            difficulty: 'easy',
+          }),
+        }),
+      );
+    });
+
+    it('should filter by canonical ingredient ID', async () => {
+      const canonicalId = '99999999-9999-4999-8999-999999999999';
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(0);
+
+      await service.findAll({
+        canonicalIngredientId: canonicalId,
+        sort: 'trending',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ingredients: {
+              some: {
+                canonicalId,
+              },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('should filter by creator ID', async () => {
+      const creatorId = mockCreator.id;
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(0);
+
+      await service.findAll({
+        creatorId,
+        sort: 'trending',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            creatorId,
+          }),
+        }),
+      );
+    });
+
+    it('should filter by rootOnly=true (parentId is null) and rootOnly=false (parentId is not null)', async () => {
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(0);
+
+      // Root only
+      await service.findAll({
+        rootOnly: true,
+        sort: 'trending',
+        page: 1,
+        limit: 20,
+      });
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            parentId: null,
+          }),
+        }),
+      );
+
+      // Remixes only
+      await service.findAll({
+        rootOnly: false,
+        sort: 'trending',
+        page: 1,
+        limit: 20,
+      });
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            parentId: { not: null },
+          }),
+        }),
+      );
+    });
+
+    it('should apply stable tie-breaker ordering for all sort modes', async () => {
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(0);
+
+      // recent
+      await service.findAll({ sort: 'recent', page: 1, limit: 20 });
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+
+      // remixes
+      await service.findAll({ sort: 'remixes', page: 1, limit: 20 });
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ remixCount: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+
+      // cooks
+      await service.findAll({ sort: 'cooks', page: 1, limit: 20 });
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ cookCount: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+
+      // votes
+      await service.findAll({ sort: 'votes', page: 1, limit: 20 });
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ voteCount: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+    });
+  });
+
+  describe('5. findMyExperiments (Authenticated Creator Feed & Isolation)', () => {
+    it('should return only experiments authored by authenticated user with pagination', async () => {
+      const mockUserExperiment = {
+        id: 'exp-user-1',
+        creatorId: mockCreator.id,
+        parentId: null,
+        rootId: 'exp-user-1',
+        branchDepth: 0,
+        title: 'My Custom Experiment',
+        description: 'Personal experiment creation.',
+        steps: [],
+        difficulty: 'medium',
+        estimatedCost: null,
+        estimatedTimeMinutes: 15,
+        heroMedia: null,
+        aiMetadata: null,
+        safetyStatus: 'SAFE',
+        remixCount: 0,
+        cookCount: 0,
+        voteCount: 0,
+        resultCount: 0,
+        createdAt: new Date('2026-10-15T00:00:00Z'),
+        updatedAt: new Date('2026-10-15T00:00:00Z'),
+        creator: {
+          id: mockCreator.id,
+          username: mockCreator.username,
+          displayName: mockCreator.displayName,
+          avatarUrl: mockCreator.avatarUrl,
+          skillLevel: mockCreator.skillLevel,
+        },
+        ingredients: [],
+      };
+
+      prisma.experiment.findMany.mockResolvedValue([mockUserExperiment]);
+      prisma.experiment.count.mockResolvedValue(1);
+
+      const res = await service.findMyExperiments(mockCreator.id, { page: 1, limit: 10 });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith({
+        where: { creatorId: mockCreator.id },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatarUrl: true,
+              skillLevel: true,
+            },
+          },
+          ingredients: true,
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: 0,
+        take: 10,
+      });
+
+      expect(res.items).toHaveLength(1);
+      expect(res.total).toBe(1);
+      expect(res.page).toBe(1);
+      expect(res.limit).toBe(10);
+      expect(res.totalPages).toBe(1);
+      expect(res.hasMore).toBe(false);
+      expect(res.items[0]?.id).toBe('exp-user-1');
+    });
+
+    it('should correctly paginate subsequent pages for user experiments', async () => {
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(35);
+
+      const res = await service.findMyExperiments(mockCreator.id, { page: 2, limit: 10 });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 10,
+          take: 10,
+        }),
+      );
+      expect(res.total).toBe(35);
+      expect(res.totalPages).toBe(4);
+      expect(res.hasMore).toBe(true);
+    });
+  });
+
+  describe('6. DTO Query Validation Schemas', () => {
+    it('should validate and parse experimentQuerySchema defaults', () => {
+      const parsed = experimentQuerySchema.safeParse({});
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.page).toBe(1);
+        expect(parsed.data.limit).toBe(20);
+        expect(parsed.data.sort).toBe('trending');
+      }
+    });
+
+    it('should coerce strings and parse valid query parameters', () => {
+      const parsed = experimentQuerySchema.safeParse({
+        search: '  ramen noodles  ',
+        difficulty: 'medium',
+        canonicalIngredientId: '11111111-1111-4111-8111-111111111111',
+        creatorId: '22222222-2222-4222-8222-222222222222',
+        rootOnly: 'true',
+        sort: 'votes',
+        page: '3',
+        limit: '15',
+      });
+
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.search).toBe('ramen noodles');
+        expect(parsed.data.difficulty).toBe('medium');
+        expect(parsed.data.rootOnly).toBe(true);
+        expect(parsed.data.sort).toBe('votes');
+        expect(parsed.data.page).toBe(3);
+        expect(parsed.data.limit).toBe(15);
+      }
+    });
+
+    it('should reject invalid query values', () => {
+      expect(experimentQuerySchema.safeParse({ difficulty: 'impossible' }).success).toBe(false);
+      expect(experimentQuerySchema.safeParse({ sort: 'unsupported' }).success).toBe(false);
+      expect(experimentQuerySchema.safeParse({ canonicalIngredientId: 'not-a-uuid' }).success).toBe(
+        false,
+      );
+      expect(experimentQuerySchema.safeParse({ creatorId: 'not-a-uuid' }).success).toBe(false);
+      expect(experimentQuerySchema.safeParse({ page: 0 }).success).toBe(false);
+      expect(experimentQuerySchema.safeParse({ limit: 0 }).success).toBe(false);
+      expect(experimentQuerySchema.safeParse({ limit: 101 }).success).toBe(false);
+    });
+
+    it('should validate userExperimentsQuerySchema', () => {
+      expect(userExperimentsQuerySchema.safeParse({ page: 1, limit: 10 }).success).toBe(true);
+      expect(userExperimentsQuerySchema.safeParse({ limit: 101 }).success).toBe(false);
     });
   });
 });

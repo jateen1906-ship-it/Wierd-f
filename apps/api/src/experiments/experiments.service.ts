@@ -7,9 +7,23 @@ import {
   toExperimentResponse,
   toSafeCreator,
   type ExperimentResponse,
+  type PaginatedExperimentsResponse,
 } from './dto/experiment-response.dto';
 import type { LineageNode, LineageResponse } from './dto/lineage-response.dto';
 import type { ExperimentTreeNode, ExperimentTreeResponse } from './dto/tree-response.dto';
+import type {
+  ExperimentQueryDto,
+  ExperimentSort,
+  UserExperimentsQueryDto,
+} from './dto/experiment-query.dto';
+
+const SAFE_CREATOR_SELECT = {
+  id: true,
+  username: true,
+  displayName: true,
+  avatarUrl: true,
+  skillLevel: true,
+};
 
 @Injectable()
 export class ExperimentsService {
@@ -387,6 +401,158 @@ export class ExperimentsService {
       if (!existingSet.has(id)) {
         throw new BadRequestException(`Canonical ingredient with ID "${id}" does not exist`);
       }
+    }
+  }
+
+  /**
+   * Public discovery feed for browsing and exploring food experiments
+   * Supports multi-dimensional filtering, deterministic ordering, and pagination
+   */
+  async findAll(query: ExperimentQueryDto): Promise<PaginatedExperimentsResponse> {
+    const where: any = {
+      safetyStatus: { not: 'BLOCKED' },
+    };
+
+    if (query.search) {
+      const term = query.search.trim();
+      if (term.length > 0) {
+        where.OR = [
+          { title: { contains: term, mode: 'insensitive' } },
+          { description: { contains: term, mode: 'insensitive' } },
+        ];
+      }
+    }
+
+    if (query.difficulty) {
+      where.difficulty = query.difficulty;
+    }
+
+    if (query.canonicalIngredientId) {
+      where.ingredients = {
+        some: {
+          canonicalId: query.canonicalIngredientId,
+        },
+      };
+    }
+
+    if (query.creatorId) {
+      where.creatorId = query.creatorId;
+    }
+
+    if (query.rootOnly !== undefined) {
+      where.parentId = query.rootOnly ? null : { not: null };
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.experiment.findMany({
+        where,
+        include: {
+          creator: { select: SAFE_CREATOR_SELECT },
+          ingredients: true,
+        },
+        orderBy: this.getOrderBy(query.sort),
+        skip,
+        take: limit,
+      }),
+      this.prisma.experiment.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit) || (total === 0 ? 0 : 1);
+    const hasMore = page < totalPages;
+
+    return {
+      items: items.map(toExperimentResponse as any),
+      total,
+      page,
+      limit,
+      totalPages,
+      hasMore,
+    };
+  }
+
+  /**
+   * Authenticated creator feed for listing user's own experiments
+   */
+  async findMyExperiments(
+    userId: string,
+    query: UserExperimentsQueryDto,
+  ): Promise<PaginatedExperimentsResponse> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where = {
+      creatorId: userId,
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.experiment.findMany({
+        where,
+        include: {
+          creator: { select: SAFE_CREATOR_SELECT },
+          ingredients: true,
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: limit,
+      }),
+      this.prisma.experiment.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit) || (total === 0 ? 0 : 1);
+    const hasMore = page < totalPages;
+
+    return {
+      items: items.map(toExperimentResponse as any),
+      total,
+      page,
+      limit,
+      totalPages,
+      hasMore,
+    };
+  }
+
+  /**
+   * Determine deterministic ordering based on sort parameter.
+   * Every sort mode includes stable tie-breakers ({ createdAt: 'desc' }, { id: 'desc' }).
+   */
+  private getOrderBy(sort: ExperimentSort = 'trending') {
+    switch (sort) {
+      case 'trending':
+        return [
+          { remixCount: 'desc' as const },
+          { cookCount: 'desc' as const },
+          { voteCount: 'desc' as const },
+          { resultCount: 'desc' as const },
+          { createdAt: 'desc' as const },
+          { id: 'desc' as const },
+        ];
+      case 'recent':
+        return [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+      case 'remixes':
+        return [
+          { remixCount: 'desc' as const },
+          { createdAt: 'desc' as const },
+          { id: 'desc' as const },
+        ];
+      case 'cooks':
+        return [
+          { cookCount: 'desc' as const },
+          { createdAt: 'desc' as const },
+          { id: 'desc' as const },
+        ];
+      case 'votes':
+        return [
+          { voteCount: 'desc' as const },
+          { createdAt: 'desc' as const },
+          { id: 'desc' as const },
+        ];
+      default:
+        return [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
     }
   }
 }
