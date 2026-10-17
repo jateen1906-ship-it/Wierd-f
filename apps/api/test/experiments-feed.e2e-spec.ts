@@ -79,8 +79,13 @@ describe('Experiments Discovery Feed (e2e)', () => {
       .send({
         title: 'Balsamic Strawberry Omelette',
         description: 'Sweet and tangy breakfast experiment.',
-        steps: ['Slice strawberries', 'Whisk eggs', 'Cook and drizzle balsamic'],
+        steps: [
+          { stepNumber: 1, instruction: 'Slice strawberries' },
+          { stepNumber: 2, instruction: 'Whisk eggs' },
+          { stepNumber: 3, instruction: 'Cook and drizzle balsamic' },
+        ],
         difficulty: 'easy',
+        estimatedCost: { min: 40, max: 80, currency: 'INR' },
         estimatedTimeMinutes: 10,
         ingredients: [
           {
@@ -107,7 +112,11 @@ describe('Experiments Discovery Feed (e2e)', () => {
       .send({
         title: 'Spicy Balsamic Strawberry Omelette',
         description: 'Added crushed habanero flakes for sweet-acid-heat harmony.',
-        steps: ['Slice strawberries', 'Whisk eggs with habanero', 'Cook omelette'],
+        steps: [
+          { stepNumber: 1, instruction: 'Slice strawberries' },
+          { stepNumber: 2, instruction: 'Whisk eggs with habanero' },
+          { stepNumber: 3, instruction: 'Cook omelette' },
+        ],
         difficulty: 'hard',
         estimatedTimeMinutes: 12,
         ingredients: [

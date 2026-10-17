@@ -30,13 +30,13 @@ export class VotesService {
   ): Promise<{ vote: VoteResponse; isNew: boolean }> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Verify experiment exists
+        // 1. Verify experiment exists and is safe
         const experiment = await tx.experiment.findUnique({
           where: { id: experimentId },
-          select: { id: true },
+          select: { id: true, safetyStatus: true },
         });
 
-        if (!experiment) {
+        if (!experiment || experiment.safetyStatus === 'BLOCKED') {
           throw new NotFoundException(`Experiment with ID ${experimentId} not found`);
         }
 
@@ -109,13 +109,13 @@ export class VotesService {
     experimentId: string,
     userId?: string,
   ): Promise<ExperimentVoteSummaryResponse> {
-    // 1. Validate experiment existence
+    // 1. Validate experiment existence and safety
     const experiment = await this.prisma.experiment.findUnique({
       where: { id: experimentId },
-      select: { id: true },
+      select: { id: true, safetyStatus: true },
     });
 
-    if (!experiment) {
+    if (!experiment || experiment.safetyStatus === 'BLOCKED') {
       throw new NotFoundException(`Experiment with ID ${experimentId} not found`);
     }
 
@@ -225,9 +225,14 @@ export class VotesService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
+    const where = {
+      userId,
+      experiment: { safetyStatus: { not: 'BLOCKED' } },
+    };
+
     const [items, total] = await Promise.all([
       this.prisma.vote.findMany({
-        where: { userId },
+        where,
         include: {
           experiment: {
             select: {
@@ -241,7 +246,7 @@ export class VotesService {
         take: limit,
       }),
       this.prisma.vote.count({
-        where: { userId },
+        where,
       }),
     ]);
 

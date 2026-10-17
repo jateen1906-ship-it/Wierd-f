@@ -83,8 +83,13 @@ describe('CookingResultsController (e2e)', () => {
       .send({
         title: 'Butter Maggi Toast',
         description: 'Testing crunchy buttery noodle toast combination.',
-        steps: ['Boil maggi', 'Toast bread with butter', 'Combine together'],
+        steps: [
+          { stepNumber: 1, instruction: 'Boil maggi' },
+          { stepNumber: 2, instruction: 'Toast bread with butter' },
+          { stepNumber: 3, instruction: 'Combine together' },
+        ],
         difficulty: 'easy',
+        estimatedCost: { min: 30, max: 60, currency: 'INR' },
         estimatedTimeMinutes: 10,
         ingredients: [
           {

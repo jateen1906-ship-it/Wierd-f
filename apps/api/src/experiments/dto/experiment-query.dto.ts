@@ -15,6 +15,7 @@ export const experimentQuerySchema = z.object({
   difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
   canonicalIngredientId: z.string().trim().uuid('Invalid canonical ingredient UUID').optional(),
   creatorId: z.string().trim().uuid('Invalid creator UUID').optional(),
+  creatorUsername: z.string().trim().max(50, 'Username cannot exceed 50 characters').optional(),
   rootOnly: z
     .preprocess((val) => {
       if (val === 'true' || val === true) return true;

@@ -102,7 +102,10 @@ describe('CookingResultsService', () => {
     };
 
     it('should successfully create a cooking result and increment experiment stats', async () => {
-      prisma.experiment.findUnique.mockResolvedValue({ id: mockExperimentId });
+      prisma.experiment.findUnique.mockResolvedValue({
+        id: mockExperimentId,
+        safetyStatus: 'APPROVED',
+      });
       prisma.cookingResult.create.mockResolvedValue(mockCookingResultRecord);
       prisma.experiment.update.mockResolvedValue({
         id: mockExperimentId,
@@ -114,7 +117,7 @@ describe('CookingResultsService', () => {
 
       expect(prisma.experiment.findUnique).toHaveBeenCalledWith({
         where: { id: mockExperimentId },
-        select: { id: true },
+        select: { id: true, safetyStatus: true },
       });
 
       expect(prisma.cookingResult.create).toHaveBeenCalledWith(
@@ -158,8 +161,23 @@ describe('CookingResultsService', () => {
       expect(prisma.experiment.update).not.toHaveBeenCalled();
     });
 
+    it('should throw NotFoundException if referenced experiment is BLOCKED', async () => {
+      prisma.experiment.findUnique.mockResolvedValue({
+        id: mockExperimentId,
+        safetyStatus: 'BLOCKED',
+      });
+
+      await expect(service.create(mockCookUser.id, validDto)).rejects.toThrow(NotFoundException);
+
+      expect(prisma.cookingResult.create).not.toHaveBeenCalled();
+      expect(prisma.experiment.update).not.toHaveBeenCalled();
+    });
+
     it('should enforce that the authenticated user ID is used and cannot be spoofed', async () => {
-      prisma.experiment.findUnique.mockResolvedValue({ id: mockExperimentId });
+      prisma.experiment.findUnique.mockResolvedValue({
+        id: mockExperimentId,
+        safetyStatus: 'APPROVED',
+      });
       prisma.cookingResult.create.mockResolvedValue(mockCookingResultRecord);
       prisma.experiment.update.mockResolvedValue({ id: mockExperimentId });
 
@@ -182,7 +200,10 @@ describe('CookingResultsService', () => {
 
   describe('2. findOne (Get Single Cooking Result)', () => {
     it('should return sanitized cooking result when found', async () => {
-      prisma.cookingResult.findUnique.mockResolvedValue(mockCookingResultRecord);
+      prisma.cookingResult.findUnique.mockResolvedValue({
+        ...mockCookingResultRecord,
+        experiment: { safetyStatus: 'APPROVED' },
+      });
 
       const result = await service.findOne(mockResultId);
 
@@ -197,11 +218,23 @@ describe('CookingResultsService', () => {
 
       await expect(service.findOne('non-existent-id')).rejects.toThrow(NotFoundException);
     });
+
+    it('should throw NotFoundException when associated experiment is BLOCKED', async () => {
+      prisma.cookingResult.findUnique.mockResolvedValue({
+        ...mockCookingResultRecord,
+        experiment: { safetyStatus: 'BLOCKED' },
+      });
+
+      await expect(service.findOne(mockResultId)).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('3. findByExperiment (List Results for Experiment)', () => {
     it('should return paginated results with stable ordering when experiment exists', async () => {
-      prisma.experiment.findUnique.mockResolvedValue({ id: mockExperimentId });
+      prisma.experiment.findUnique.mockResolvedValue({
+        id: mockExperimentId,
+        safetyStatus: 'APPROVED',
+      });
       prisma.cookingResult.findMany.mockResolvedValue([mockCookingResultRecord]);
       prisma.cookingResult.count.mockResolvedValue(1);
 
@@ -209,7 +242,7 @@ describe('CookingResultsService', () => {
 
       expect(prisma.experiment.findUnique).toHaveBeenCalledWith({
         where: { id: mockExperimentId },
-        select: { id: true },
+        select: { id: true, safetyStatus: true },
       });
 
       expect(prisma.cookingResult.findMany).toHaveBeenCalledWith(
@@ -236,6 +269,17 @@ describe('CookingResultsService', () => {
         service.findByExperiment('non-existent-exp-id', { page: 1, limit: 10 }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('should throw NotFoundException if experiment is BLOCKED', async () => {
+      prisma.experiment.findUnique.mockResolvedValue({
+        id: mockExperimentId,
+        safetyStatus: 'BLOCKED',
+      });
+
+      await expect(
+        service.findByExperiment(mockExperimentId, { page: 1, limit: 10 }),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('4. findByUser (List Authenticated User Results)', () => {
@@ -247,7 +291,7 @@ describe('CookingResultsService', () => {
 
       expect(prisma.cookingResult.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: mockCookUser.id },
+          where: { userId: mockCookUser.id, experiment: { safetyStatus: { not: 'BLOCKED' } } },
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip: 0,
           take: 20,

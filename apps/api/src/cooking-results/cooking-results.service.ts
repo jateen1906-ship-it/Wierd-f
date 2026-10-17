@@ -26,13 +26,13 @@ export class CookingResultsService {
    * Create a new real-world cooking result attached to an experiment branch
    */
   async create(userId: string, dto: CreateCookingResultDto): Promise<CookingResultResponse> {
-    // 1. Verify that the referenced experiment exists
+    // 1. Verify that the referenced experiment exists and is safe
     const experiment = await this.prisma.experiment.findUnique({
       where: { id: dto.experimentId },
-      select: { id: true },
+      select: { id: true, safetyStatus: true },
     });
 
-    if (!experiment) {
+    if (!experiment || experiment.safetyStatus === 'BLOCKED') {
       throw new NotFoundException(`Experiment with ID ${dto.experimentId} does not exist`);
     }
 
@@ -87,10 +87,15 @@ export class CookingResultsService {
         user: {
           select: SAFE_USER_SELECT,
         },
+        experiment: {
+          select: {
+            safetyStatus: true,
+          },
+        },
       },
     });
 
-    if (!result) {
+    if (!result || result.experiment?.safetyStatus === 'BLOCKED') {
       throw new NotFoundException(`Cooking result with ID ${id} not found`);
     }
 
@@ -104,13 +109,13 @@ export class CookingResultsService {
     experimentId: string,
     query: CookingResultQueryDto,
   ): Promise<PaginatedCookingResultsResponse> {
-    // 1. Verify experiment exists
+    // 1. Verify experiment exists and is safe
     const experiment = await this.prisma.experiment.findUnique({
       where: { id: experimentId },
-      select: { id: true },
+      select: { id: true, safetyStatus: true },
     });
 
-    if (!experiment) {
+    if (!experiment || experiment.safetyStatus === 'BLOCKED') {
       throw new NotFoundException(`Experiment with ID ${experimentId} not found`);
     }
 
@@ -159,9 +164,14 @@ export class CookingResultsService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
+    const where = {
+      userId,
+      experiment: { safetyStatus: { not: 'BLOCKED' } },
+    };
+
     const [items, total] = await Promise.all([
       this.prisma.cookingResult.findMany({
-        where: { userId },
+        where,
         include: {
           user: {
             select: SAFE_USER_SELECT,
@@ -172,7 +182,7 @@ export class CookingResultsService {
         take: limit,
       }),
       this.prisma.cookingResult.count({
-        where: { userId },
+        where,
       }),
     ]);
 
@@ -197,7 +207,9 @@ export class CookingResultsService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = {
+      experiment: { safetyStatus: { not: 'BLOCKED' } },
+    };
     if (query.experimentId) {
       where.experimentId = query.experimentId;
     }

@@ -76,7 +76,10 @@ describe('ReactionsService', () => {
 
       expect(prisma.cookingResult.findUnique).toHaveBeenCalledWith({
         where: { id: mockResultId },
-        select: { id: true },
+        select: {
+          id: true,
+          experiment: { select: { safetyStatus: true } },
+        },
       });
       expect(prisma.resultReaction.findUnique).toHaveBeenCalledWith({
         where: {
@@ -318,7 +321,10 @@ describe('ReactionsService', () => {
       const res = await service.getUserReactions(mockUserId, { page: 1, limit: 10 });
 
       expect(prisma.resultReaction.findMany).toHaveBeenCalledWith({
-        where: { userId: mockUserId },
+        where: {
+          userId: mockUserId,
+          result: { experiment: { safetyStatus: { not: 'BLOCKED' } } },
+        },
         include: {
           result: {
             select: {
@@ -350,7 +356,10 @@ describe('ReactionsService', () => {
 
       expect(prisma.resultReaction.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: mockOtherUserId },
+          where: {
+            userId: mockOtherUserId,
+            result: { experiment: { safetyStatus: { not: 'BLOCKED' } } },
+          },
         }),
       );
     });

@@ -82,8 +82,13 @@ describe('Votes (e2e)', () => {
       .send({
         title: 'Chili Chocolate Ramen',
         description: 'Rich dark chocolate broth with spicy chili oil and ramen noodles.',
-        steps: ['Prepare ramen broth', 'Melt dark chocolate', 'Combine with chili oil'],
+        steps: [
+          { stepNumber: 1, instruction: 'Prepare ramen broth' },
+          { stepNumber: 2, instruction: 'Melt dark chocolate' },
+          { stepNumber: 3, instruction: 'Combine with chili oil' },
+        ],
         difficulty: 'medium',
+        estimatedCost: { min: 80, max: 150, currency: 'INR' },
         estimatedTimeMinutes: 20,
         ingredients: [
           {

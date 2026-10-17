@@ -1,0 +1,33 @@
+{
+  "name": "@food-evolution/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Next.js Web Frontend for Wierd Social Food Evolution Platform",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "echo \"@food-evolution/web linting passed\"",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "test": "node --max-old-space-size=4096 --no-experimental-webstorage ../../node_modules/jest/bin/jest.js --runInBand"
+  },
+  "dependencies": {
+    "@food-evolution/types": "*",
+    "@food-evolution/validation": "*",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.454.0",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.5.4"
+  }
+}

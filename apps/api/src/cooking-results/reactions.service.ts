@@ -30,13 +30,16 @@ export class ReactionsService {
   ): Promise<{ reaction: CookingResultReactionResponse; isNew: boolean }> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Verify cooking result exists
+        // 1. Verify cooking result exists and belongs to a safe experiment
         const result = await tx.cookingResult.findUnique({
           where: { id: resultId },
-          select: { id: true },
+          select: {
+            id: true,
+            experiment: { select: { safetyStatus: true } },
+          },
         });
 
-        if (!result) {
+        if (!result || result.experiment?.safetyStatus === 'BLOCKED') {
           throw new NotFoundException(`Cooking result with ID ${resultId} not found`);
         }
 
@@ -228,9 +231,16 @@ export class ReactionsService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
+    const where = {
+      userId,
+      result: {
+        experiment: { safetyStatus: { not: 'BLOCKED' } },
+      },
+    };
+
     const [items, total] = await Promise.all([
       this.prisma.resultReaction.findMany({
-        where: { userId },
+        where,
         include: {
           result: {
             select: {
@@ -246,7 +256,7 @@ export class ReactionsService {
         take: limit,
       }),
       this.prisma.resultReaction.count({
-        where: { userId },
+        where,
       }),
     ]);
 

@@ -83,8 +83,12 @@ describe('Cooking Result Reactions (e2e)', () => {
       .send({
         title: 'Ghost Pepper Sourdough',
         description: 'Extremely spicy fermented bread test.',
-        steps: ['Mix sourdough starter with ghost pepper mash', 'Bake at 450F'],
+        steps: [
+          { stepNumber: 1, instruction: 'Mix sourdough starter with ghost pepper mash' },
+          { stepNumber: 2, instruction: 'Bake at 450F' },
+        ],
         difficulty: 'hard',
+        estimatedCost: { min: 100, max: 200, currency: 'INR' },
         estimatedTimeMinutes: 120,
         ingredients: [
           {

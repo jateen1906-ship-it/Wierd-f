@@ -67,6 +67,9 @@ describe('ExperimentsService', () => {
       ingredient: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      userFollow: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       $transaction: jest.fn(),
     };
 
@@ -807,6 +810,193 @@ describe('ExperimentsService', () => {
     it('should validate userExperimentsQuerySchema', () => {
       expect(userExperimentsQuerySchema.safeParse({ page: 1, limit: 10 }).success).toBe(true);
       expect(userExperimentsQuerySchema.safeParse({ limit: 101 }).success).toBe(false);
+    });
+  });
+
+  describe('findFollowingFeed', () => {
+    const callerUserId = 'user-caller-1234';
+
+    it('should return empty list when authenticated user follows nobody', async () => {
+      prisma.userFollow.findMany.mockResolvedValue([]);
+
+      const result = await service.findFollowingFeed(callerUserId, {
+        page: 1,
+        limit: 20,
+        sort: 'recent',
+      });
+
+      expect(prisma.userFollow.findMany).toHaveBeenCalledWith({
+        where: { followerId: callerUserId },
+        select: { followingId: true },
+      });
+      expect(prisma.experiment.findMany).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        items: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+        hasMore: false,
+      });
+    });
+
+    it('should filter experiments by followed creator IDs and exclude BLOCKED experiments', async () => {
+      const followedIds = ['creator-aaa-111', 'creator-bbb-222'];
+      prisma.userFollow.findMany.mockResolvedValue([
+        { followingId: 'creator-aaa-111' },
+        { followingId: 'creator-bbb-222' },
+      ]);
+
+      const mockExperiment = {
+        id: 'exp-following-1',
+        creatorId: 'creator-aaa-111',
+        title: 'Followed Chef Butter Chicken',
+        description: 'Rich spiced gravy cooked in hostel kettle',
+        difficulty: 'medium',
+        steps: [],
+        estimatedCost: { min: 80, max: 120, currency: 'INR' },
+        estimatedTimeMinutes: 25,
+        heroMedia: null,
+        safetyStatus: 'SAFE',
+        parentId: null,
+        rootId: 'exp-following-1',
+        branchDepth: 0,
+        remixCount: 1,
+        cookCount: 4,
+        voteCount: 10,
+        resultCount: 2,
+        createdAt: new Date('2026-10-15T00:00:00Z'),
+        updatedAt: new Date('2026-10-15T00:00:00Z'),
+        creator: {
+          id: 'creator-aaa-111',
+          username: 'chef_aaa',
+          displayName: 'Chef AAA',
+          avatarUrl: null,
+          skillLevel: 'kettle_pro',
+        },
+        ingredients: [],
+      };
+
+      prisma.experiment.findMany.mockResolvedValue([mockExperiment]);
+      prisma.experiment.count.mockResolvedValue(1);
+
+      const result = await service.findFollowingFeed(callerUserId, {
+        page: 1,
+        limit: 10,
+        sort: 'recent',
+        difficulty: 'medium',
+      });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            creatorId: { in: followedIds },
+            safetyStatus: { not: 'BLOCKED' },
+            difficulty: 'medium',
+          }),
+          skip: 0,
+          take: 10,
+        }),
+      );
+
+      expect(result.items.length).toBe(1);
+      expect(result.items[0]!.id).toBe('exp-following-1');
+      expect(result.items[0]!.creator?.username).toBe('chef_aaa');
+      expect(result.total).toBe(1);
+      expect(result.totalPages).toBe(1);
+      expect(result.hasMore).toBe(false);
+    });
+
+    it('should support search, rootOnly filter, and pagination in following feed', async () => {
+      prisma.userFollow.findMany.mockResolvedValue([{ followingId: 'creator-aaa-111' }]);
+
+      prisma.experiment.findMany.mockResolvedValue([]);
+      prisma.experiment.count.mockResolvedValue(0);
+
+      await service.findFollowingFeed(callerUserId, {
+        page: 2,
+        limit: 5,
+        search: 'Maggi',
+        rootOnly: true,
+        sort: 'trending',
+      });
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            creatorId: { in: ['creator-aaa-111'] },
+            safetyStatus: { not: 'BLOCKED' },
+            parentId: null,
+            OR: [
+              { title: { contains: 'Maggi', mode: 'insensitive' } },
+              { description: { contains: 'Maggi', mode: 'insensitive' } },
+            ],
+          }),
+          skip: 5,
+          take: 5,
+        }),
+      );
+    });
+  });
+
+  describe('Notification dispatching on create and remix', () => {
+    it('dispatches notifications to followers when NotificationsService is available on create', async () => {
+      const mockNotificationsService = {
+        notifyFollowersOfNewExperiment: jest.fn().mockResolvedValue(3),
+      };
+
+      const customService = new ExperimentsService(prisma as any, mockNotificationsService as any);
+
+      const mockCreated = {
+        id: 'new-exp-123',
+        creatorId: 'creator-123',
+        parentId: null,
+        rootId: 'new-exp-123',
+        branchDepth: 0,
+        title: 'Notification Test Recipe',
+        description: 'Test description',
+        difficulty: 'medium',
+        safetyStatus: 'SAFE',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        creator: {
+          id: 'creator-123',
+          username: 'chef',
+          displayName: 'Chef',
+          avatarUrl: null,
+          skillLevel: 'HOME_COOK',
+        },
+        ingredients: [],
+      };
+
+      prisma.$transaction.mockImplementation(async (callback: any) => {
+        return callback({
+          experiment: {
+            create: jest.fn().mockResolvedValue(mockCreated),
+            findUnique: jest.fn().mockResolvedValue(mockCreated),
+          },
+          experimentIngredient: {
+            createMany: jest.fn().mockResolvedValue({ count: 0 }),
+          },
+        });
+      });
+
+      await customService.create('creator-123', {
+        title: 'Notification Test Recipe',
+        description: 'Test description',
+        ingredients: [],
+        steps: [{ stepNumber: 1, instruction: 'Cook it.' }],
+        difficulty: 'medium',
+        estimatedCost: { min: 40, max: 80, currency: 'INR' },
+        estimatedTimeMinutes: 15,
+      });
+
+      expect(mockNotificationsService.notifyFollowersOfNewExperiment).toHaveBeenCalledWith(
+        'creator-123',
+        'new-exp-123',
+        'Notification Test Recipe',
+        false,
+      );
     });
   });
 });

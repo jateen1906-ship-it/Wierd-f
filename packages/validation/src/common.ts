@@ -62,9 +62,16 @@ export const costEstimateSchema = z
  */
 export const mediaReferenceSchema = z.object({
   id: entityIdSchema,
-  url: z.string().url('Media reference must be a valid URL'),
+  url: z
+    .string()
+    .url('Media reference must be a valid URL')
+    .refine((u) => /^https?:\/\//i.test(u), 'Media URL must use http or https protocol'),
   type: z.enum(['image', 'video']),
-  thumbnailUrl: z.string().url('Thumbnail must be a valid URL').optional(),
+  thumbnailUrl: z
+    .string()
+    .url('Thumbnail must be a valid URL')
+    .refine((u) => /^https?:\/\//i.test(u), 'Thumbnail URL must use http or https protocol')
+    .optional(),
   width: z.number().int().positive().max(10000).optional(),
   height: z.number().int().positive().max(10000).optional(),
   durationSeconds: z.number().positive().max(3600).optional(),

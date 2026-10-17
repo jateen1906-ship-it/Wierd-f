@@ -8,6 +8,9 @@ import { ExperimentsModule } from './experiments/experiments.module';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { CookingResultsModule } from './cooking-results/cooking-results.module';
 import { VotesModule } from './votes/votes.module';
+import { UsersModule } from './users/users.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ActivityModule } from './activity/activity.module';
 
 @Module({
   imports: [
@@ -21,6 +24,9 @@ import { VotesModule } from './votes/votes.module';
     IngredientsModule,
     CookingResultsModule,
     VotesModule,
+    UsersModule,
+    NotificationsModule,
+    ActivityModule,
   ],
   controllers: [AppController],
   providers: [],

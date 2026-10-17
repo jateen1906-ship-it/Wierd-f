@@ -75,7 +75,7 @@ describe('VotesService', () => {
 
       expect(prisma.experiment.findUnique).toHaveBeenCalledWith({
         where: { id: mockExperimentId },
-        select: { id: true },
+        select: { id: true, safetyStatus: true },
       });
       expect(prisma.vote.findUnique).toHaveBeenCalledWith({
         where: {
@@ -217,6 +217,15 @@ describe('VotesService', () => {
         NotFoundException,
       );
     });
+
+    it('should throw NotFoundException if experiment is BLOCKED by safety rules', async () => {
+      prisma.experiment.findUnique.mockResolvedValue({
+        id: 'blocked-exp-id',
+        safetyStatus: 'BLOCKED',
+      });
+
+      await expect(service.getVoteSummary('blocked-exp-id')).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('3. deleteVote (Delete Authenticated Vote)', () => {
@@ -306,7 +315,10 @@ describe('VotesService', () => {
 
       // Verifies isolation: queried strictly by mockUserId
       expect(prisma.vote.findMany).toHaveBeenCalledWith({
-        where: { userId: mockUserId },
+        where: {
+          userId: mockUserId,
+          experiment: { safetyStatus: { not: 'BLOCKED' } },
+        },
         include: {
           experiment: {
             select: {
@@ -354,7 +366,10 @@ describe('VotesService', () => {
 
       expect(prisma.vote.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: mockOtherUserId },
+          where: {
+            userId: mockOtherUserId,
+            experiment: { safetyStatus: { not: 'BLOCKED' } },
+          },
         }),
       );
     });

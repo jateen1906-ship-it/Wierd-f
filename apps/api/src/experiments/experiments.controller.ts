@@ -61,6 +61,20 @@ export class ExperimentsController {
   }
 
   /**
+   * GET /api/v1/experiments/feed/following
+   * Personalized feed for authenticated users showing experiments from followed creators
+   */
+  @Get('feed/following')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async getFollowingFeed(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(experimentQuerySchema)) query: ExperimentQueryDto,
+  ): Promise<PaginatedExperimentsResponse> {
+    return this.experimentsService.findFollowingFeed(user.userId, query);
+  }
+
+  /**
    * GET /api/v1/experiments/:id
    * Get experiment details with ingredients, creator, and stats
    */
@@ -125,5 +139,19 @@ export class UserExperimentsController {
     @Query(new ZodValidationPipe(userExperimentsQuerySchema)) query: UserExperimentsQueryDto,
   ): Promise<PaginatedExperimentsResponse> {
     return this.experimentsService.findMyExperiments(user.userId, query);
+  }
+
+  /**
+   * GET /api/v1/users/me/following-feed
+   * List experiments from followed creators for the authenticated user
+   */
+  @Get('me/following-feed')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async getFollowingFeed(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(experimentQuerySchema)) query: ExperimentQueryDto,
+  ): Promise<PaginatedExperimentsResponse> {
+    return this.experimentsService.findFollowingFeed(user.userId, query);
   }
 }

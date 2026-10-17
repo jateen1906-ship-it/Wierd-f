@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { CreateExperimentDto } from './dto/create-experiment.dto';
 import type { RemixExperimentDto } from './dto/remix-experiment.dto';
 import {
@@ -29,7 +36,10 @@ const SAFE_CREATOR_SELECT = {
 export class ExperimentsService {
   private readonly logger = new Logger(ExperimentsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notificationsService?: NotificationsService,
+  ) {}
 
   /**
    * Create a new root food experiment
@@ -97,6 +107,17 @@ export class ExperimentsService {
       throw new BadRequestException('Failed to create root experiment');
     }
 
+    if (this.notificationsService) {
+      await this.notificationsService
+        .notifyFollowersOfNewExperiment(creatorId, created.id, created.title, false)
+        .catch((err) => {
+          this.logger.error(
+            `Failed to dispatch notifications for experiment [${created.id}]:`,
+            err,
+          );
+        });
+    }
+
     this.logger.log(
       `Created root experiment "${created.title}" [${created.id}] by user [${creatorId}]`,
     );
@@ -115,7 +136,7 @@ export class ExperimentsService {
       },
     });
 
-    if (!experiment) {
+    if (!experiment || experiment.safetyStatus === 'BLOCKED') {
       throw new NotFoundException(`Experiment with ID "${id}" was not found`);
     }
 
@@ -148,7 +169,7 @@ export class ExperimentsService {
         where: { id: parentId },
       });
 
-      if (!parent) {
+      if (!parent || parent.safetyStatus === 'BLOCKED') {
         throw new NotFoundException(`Parent experiment with ID "${parentId}" was not found`);
       }
 
@@ -211,6 +232,17 @@ export class ExperimentsService {
       throw new BadRequestException('Failed to create remix branch');
     }
 
+    if (this.notificationsService) {
+      await this.notificationsService
+        .notifyFollowersOfNewExperiment(creatorId, createdRemix.id, createdRemix.title, true)
+        .catch((err) => {
+          this.logger.error(
+            `Failed to dispatch notifications for remix [${createdRemix.id}]:`,
+            err,
+          );
+        });
+    }
+
     this.logger.log(
       `Remixed experiment [${parentId}] -> [${createdRemix.id}] (depth: ${createdRemix.branchDepth}, root: ${createdRemix.rootId}) by user [${creatorId}]`,
     );
@@ -227,7 +259,7 @@ export class ExperimentsService {
       include: { creator: true },
     });
 
-    if (!current) {
+    if (!current || current.safetyStatus === 'BLOCKED') {
       throw new NotFoundException(`Experiment with ID "${id}" was not found`);
     }
 
@@ -251,7 +283,7 @@ export class ExperimentsService {
         include: { creator: true },
       });
 
-      if (!parent) break;
+      if (!parent || parent.safetyStatus === 'BLOCKED') break;
 
       ancestors.push({
         id: parent.id,
@@ -285,16 +317,17 @@ export class ExperimentsService {
       where: { id },
     });
 
-    if (!target) {
+    if (!target || target.safetyStatus === 'BLOCKED') {
       throw new NotFoundException(`Experiment with ID "${id}" was not found`);
     }
 
     const targetRootId = target.rootId ?? target.id;
 
-    // Fetch all nodes belonging to this evolution family
+    // Fetch all nodes belonging to this evolution family, excluding BLOCKED experiments
     const family = await this.prisma.experiment.findMany({
       where: {
         OR: [{ rootId: targetRootId }, { id: targetRootId }],
+        safetyStatus: { not: 'BLOCKED' },
       },
       include: { creator: true },
       orderBy: [{ branchDepth: 'asc' }, { createdAt: 'asc' }],
@@ -437,6 +470,13 @@ export class ExperimentsService {
 
     if (query.creatorId) {
       where.creatorId = query.creatorId;
+    } else if (query.creatorUsername) {
+      where.creator = {
+        username: {
+          equals: query.creatorUsername.trim(),
+          mode: 'insensitive',
+        },
+      };
     }
 
     if (query.rootOnly !== undefined) {
@@ -497,6 +537,99 @@ export class ExperimentsService {
           ingredients: true,
         },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: limit,
+      }),
+      this.prisma.experiment.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit) || (total === 0 ? 0 : 1);
+    const hasMore = page < totalPages;
+
+    return {
+      items: items.map(toExperimentResponse as any),
+      total,
+      page,
+      limit,
+      totalPages,
+      hasMore,
+    };
+  }
+
+  /**
+   * Personalized following feed for authenticated users.
+   * Efficiently filters experiments created by followed creators.
+   * Excludes BLOCKED experiments, respects safety rules, and supports sorting & pagination.
+   */
+  async findFollowingFeed(
+    userId: string,
+    query: ExperimentQueryDto,
+  ): Promise<PaginatedExperimentsResponse> {
+    // 1. Efficiently fetch following IDs for the authenticated caller
+    const follows = await this.prisma.userFollow.findMany({
+      where: { followerId: userId },
+      select: { followingId: true },
+    });
+
+    const followingIds = follows.map((f) => f.followingId);
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    // Fast-path: If user follows nobody, immediately return empty results
+    if (followingIds.length === 0) {
+      return {
+        items: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        hasMore: false,
+      };
+    }
+
+    // 2. Query experiments created by followed users with safety filter
+    const where: any = {
+      creatorId: { in: followingIds },
+      safetyStatus: { not: 'BLOCKED' },
+    };
+
+    if (query.search) {
+      const term = query.search.trim();
+      if (term.length > 0) {
+        where.OR = [
+          { title: { contains: term, mode: 'insensitive' } },
+          { description: { contains: term, mode: 'insensitive' } },
+        ];
+      }
+    }
+
+    if (query.difficulty) {
+      where.difficulty = query.difficulty;
+    }
+
+    if (query.canonicalIngredientId) {
+      where.ingredients = {
+        some: {
+          canonicalId: query.canonicalIngredientId,
+        },
+      };
+    }
+
+    if (query.rootOnly !== undefined) {
+      where.parentId = query.rootOnly ? null : { not: null };
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.experiment.findMany({
+        where,
+        include: {
+          creator: { select: SAFE_CREATOR_SELECT },
+          ingredients: true,
+        },
+        orderBy: this.getOrderBy(query.sort),
         skip,
         take: limit,
       }),

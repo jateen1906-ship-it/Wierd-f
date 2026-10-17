@@ -27,6 +27,10 @@ model User {
   cookingResults CookingResult[]
   votes          Vote[]
   resultReactions ResultReaction[]
+  following      UserFollow[]     @relation("UserFollowing")
+  followers      UserFollow[]     @relation("UserFollowers")
+  notificationsReceived Notification[] @relation("UserNotifications")
+  notificationsTriggered Notification[] @relation("NotificationActor")
 
   @@index([username])
   @@map("users")
@@ -112,6 +116,7 @@ model Experiment {
   cookingResults       CookingResult[]
   votes                Vote[]
   safetyDecisions      SafetyDecision[]
+  notifications        Notification[]
 
   @@index([creatorId])
   @@index([parentId])
@@ -237,4 +242,48 @@ model SafetyDecision {
   @@index([status])
   @@index([experimentId])
   @@map("safety_decisions")
+}
+
+/// Follow relationship between platform users and creators
+model UserFollow {
+  id          String   @id @default(uuid()) @db.Uuid
+  followerId  String   @db.Uuid
+  followingId String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  // Constraint: Prevent duplicate follows
+  @@unique([followerId, followingId], name: "unique_user_follow")
+  @@index([followerId])
+  @@index([followingId])
+  @@map("user_follows")
+}
+
+/// In-app notification for platform events and creator activity
+model Notification {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @db.Uuid
+  actorId      String      @db.Uuid
+  type         String      @db.VarChar(50)
+  experimentId String      @db.Uuid
+  title        String      @db.VarChar(200)
+  message      String      @db.VarChar(500)
+  isRead       Boolean     @default(false)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime    @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user         User        @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  actor        User        @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  experiment   Experiment  @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  // Constraints: Idempotency constraint prevents duplicate notifications on retry
+  @@unique([userId, experimentId, type], name: "unique_user_experiment_notification")
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([experimentId])
+  @@map("notifications")
 }
